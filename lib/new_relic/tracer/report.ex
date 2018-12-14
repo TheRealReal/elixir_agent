@@ -86,10 +86,26 @@ defmodule NewRelic.Tracer.Report do
       end_time_mono: end_time_mono
     })
 
+    maybe_url = case args do
+      [first | [second | _ ]] when is_atom(first) and is_binary(second) -> second
+      [first | _] when is_binary(first) -> first
+      _ -> nil
+    end
+
+    {long_name, short_name} = if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
+      hostname = URI.parse(maybe_url) |> Map.get(:host)
+      {hostname, hostname}
+    else
+      {
+        function_name({module, function, arity}, name),
+        function_name({module, function}, name)
+      }
+    end
+
     NewRelic.report_span(
       timestamp_ms: System.convert_time_unit(start_time, :native, :milliseconds),
       duration_s: duration_s,
-      name: function_name({module, function, arity}, name),
+      name: long_name,
       mfa: {module, function, arity},
       category: "http",
       attributes: Map.put(NewRelic.DistributedTrace.get_span_attrs(), :args, inspect(args))
@@ -98,21 +114,21 @@ defmodule NewRelic.Tracer.Report do
     NewRelic.incr_attributes(
       external_call_count: 1,
       external_duration_ms: duration_ms,
-      "external.#{function_name({module, function}, name)}.call_count": 1,
-      "external.#{function_name({module, function}, name)}.duration_ms": duration_ms
+      "external.#{short_name}.call_count": 1,
+      "external.#{short_name}.duration_ms": duration_ms
     )
 
     NewRelic.report_aggregate(
       %{
         name: :FunctionTrace,
-        mfa: function_name({module, function, arity}, name),
+        mfa: long_name,
         metric_category: :external
       },
       %{duration_ms: duration_ms, call_count: 1}
     )
 
     NewRelic.report_metric(
-      {:external, "/#{function_name({module, function}, name)}"},
+      {:external, "/#{short_name}"},
       duration_s: duration_s
     )
   end
