@@ -61,11 +61,11 @@ defmodule NewRelic.Harvest.Collector.Metric.Harvester do
 
     Collector.Protocol.metric_data([
       Collector.AgentRun.agent_run_id(),
-      System.convert_time_unit(state.start_time, :native, :seconds),
+      System.convert_time_unit(state.start_time, :native, :second),
       System.convert_time_unit(
         state.start_time + (state.end_time_mono - state.start_time_mono),
         :native,
-        :seconds
+        :second
       ),
       metric_data
     ])
@@ -75,7 +75,7 @@ defmodule NewRelic.Harvest.Collector.Metric.Harvester do
 
   def log_harvest(harvest_size) do
     NewRelic.report_metric({:supportability, Metric}, harvest_size: harvest_size)
-    NewRelic.log(:info, "Completed Metric harvest - size: #{harvest_size}")
+    NewRelic.log(:debug, "Completed Metric harvest - size: #{harvest_size}")
   end
 
   defp build_metric_data(metrics),
@@ -91,7 +91,7 @@ defmodule NewRelic.Harvest.Collector.Metric.Harvester do
 
   def encode(%NewRelic.Metric{name: name, scope: scope} = m),
     do: [
-      %{name: name, scope: scope},
+      %{name: to_string(name), scope: to_string(scope)},
       [
         m.call_count,
         m.total_call_time,

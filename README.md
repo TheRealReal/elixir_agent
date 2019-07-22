@@ -2,7 +2,6 @@
 
 [![Hex.pm Version](https://img.shields.io/hexpm/v/new_relic_agent.svg)](https://hex.pm/packages/new_relic_agent)
 [![Build Status](https://travis-ci.org/newrelic/elixir_agent.svg?branch=master)](https://travis-ci.org/newrelic/elixir_agent)
-[![License](https://img.shields.io/badge/license-Apache%202-blue.svg)](https://github.com/newrelic/elixir_agent/blob/master/LICENSE)
 
 The Open-Source Elixir Agent allows you to monitor your `Elixir` applications with New Relic. It helps you track transactions, distributed traces and other parts of your application's behavior and provides an overview of underlying [BEAM activity](https://github.com/newrelic/elixir_agent/wiki/BEAM-stats-page).
 
@@ -56,8 +55,8 @@ Out of the box, we will report Error Traces & some general BEAM VM stats. For fu
 There are a few adapters which leverage this agent to provide library / framework specific instrumentation:
 
 * `Phoenix` https://github.com/binaryseed/new_relic_phoenix
+* `Absinthe` https://github.com/binaryseed/new_relic_absinthe
 * `Ecto` (coming soon) https://github.com/binaryseed/new_relic_ecto
-* `Absinthe` (coming soon) https://github.com/binaryseed/new_relic_absinthe
 
 #### Plug
 

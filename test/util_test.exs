@@ -55,14 +55,76 @@ defmodule UtilTest do
     end
   end
 
+  test "minimal utilization check" do
+    assert %{metadata_version: 3} = NewRelic.Util.utilization()
+  end
+
   test "AWS utilization fast timeout" do
-    assert %{} == NewRelic.Util.maybe_add_vendors(%{}, aws_url: "http://httpbin.org/delay/10")
+    assert %{} ==
+             NewRelic.Util.Vendor.maybe_add_cloud_vendors(%{},
+               aws_url: "http://httpbin.org/delay/10"
+             )
   end
 
   test "AWS utilization info" do
-    {:ok, _} = Plug.Adapters.Cowboy2.http(FakeAwsPlug, [], port: 8883)
+    {:ok, _} = Plug.Cowboy.http(FakeAwsPlug, [], port: 8883)
 
-    util = NewRelic.Util.maybe_add_vendors(%{}, aws_url: "http://localhost:8883")
+    util = NewRelic.Util.Vendor.maybe_add_cloud_vendors(%{}, aws_url: "http://localhost:8883")
     assert get_in(util, [:vendors, :aws, "instanceId"]) == "test.id"
+  end
+
+  test "hostname detection" do
+    System.put_env("DYNO", "foobar")
+    assert NewRelic.Util.hostname() == "foobar"
+
+    System.put_env("DYNO", "run.100")
+    assert NewRelic.Util.hostname() == "run.*"
+
+    System.delete_env("DYNO")
+    hostname = NewRelic.Util.hostname()
+    assert is_binary(hostname)
+  end
+
+  describe "Verify SSL setup" do
+    test "reject bad domains" do
+      assert {:error,
+              {:failed_connect,
+               [
+                 {:to_address, {'wrong.host.badssl.com', 443}},
+                 {:inet, [:inet], {:tls_alert, _}}
+               ]}} = NewRelic.Util.HTTP.post("https://wrong.host.badssl.com/", "", [])
+
+      assert {:error,
+              {:failed_connect,
+               [
+                 {:to_address, {'expired.badssl.com', 443}},
+                 {:inet, [:inet], {:tls_alert, _}}
+               ]}} = NewRelic.Util.HTTP.post("https://expired.badssl.com/", "", [])
+
+      assert {:error,
+              {:failed_connect,
+               [
+                 {:to_address, {'self-signed.badssl.com', 443}},
+                 {:inet, [:inet], {:tls_alert, _}}
+               ]}} = NewRelic.Util.HTTP.post("https://self-signed.badssl.com/", "", [])
+
+      assert {:error,
+              {:failed_connect,
+               [
+                 {:to_address, {'untrusted-root.badssl.com', 443}},
+                 {:inet, [:inet], {:tls_alert, _}}
+               ]}} = NewRelic.Util.HTTP.post("https://untrusted-root.badssl.com/", "", [])
+
+      assert {:error,
+              {:failed_connect,
+               [
+                 {:to_address, {'incomplete-chain.badssl.com', 443}},
+                 {:inet, [:inet], {:tls_alert, _}}
+               ]}} = NewRelic.Util.HTTP.post("https://incomplete-chain.badssl.com/", "", [])
+    end
+
+    test "allows good domains" do
+      assert {:ok, _} = NewRelic.Util.HTTP.post("https://sha512.badssl.com/", "", [])
+    end
   end
 end

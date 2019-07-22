@@ -75,34 +75,49 @@ defmodule SpanEventTest do
     mfa = {:mod, :fun, 3}
 
     event = %NewRelic.Span.Event{
-      timestamp: System.system_time(:milliseconds),
+      timestamp: System.system_time(:millisecond),
       duration: 0.120,
       name: "SomeSpan",
       category: "generic",
       category_attributes: %{}
     }
 
-    Collector.SpanEvent.Harvester.report_span_event(event, context, mfa)
+    Collector.SpanEvent.Harvester.report_span_event(event, context,
+      span: {mfa, :ref},
+      parent: :root
+    )
 
     [[attrs, _, _]] = TestHelper.gather_harvest(Collector.SpanEvent.Harvester)
 
     assert attrs[:type] == "Span"
     assert attrs[:category] == "generic"
 
-    TestHelper.pause_harvest_cycle(Collector.CustomEvent.HarvestCycle)
+    TestHelper.pause_harvest_cycle(Collector.SpanEvent.HarvestCycle)
   end
 
   defmodule Traced do
     use NewRelic.Tracer
     @trace :hello
     def hello do
+      do_hello()
+    end
+
+    @trace :do_hello
+    def do_hello do
       Process.sleep(10)
       "world"
     end
 
-    @trace {:foo, category: :external}
-    def foo do
-      Process.sleep(15)
+    @trace :function
+    def function do
+      Process.sleep(10)
+      NewRelic.set_span(:generic, some: "attribute")
+      http_request()
+    end
+
+    @trace {:http_request, category: :external}
+    def http_request do
+      Process.sleep(10)
       NewRelic.set_span(:http, url: "http://example.com", method: "GET", component: "HTTPoison")
       "bar"
     end
@@ -118,12 +133,46 @@ defmodule SpanEventTest do
     get "/hello" do
       Task.async(fn ->
         Process.sleep(5)
-        Traced.foo()
+        Traced.http_request()
       end)
       |> Task.await()
 
       send_resp(conn, 200, Traced.hello())
     end
+
+    get "/reset_span" do
+      Traced.function()
+      send_resp(conn, 200, "Yo.")
+    end
+  end
+
+  test "Reset span attributes at the end" do
+    TestHelper.restart_harvest_cycle(Collector.SpanEvent.HarvestCycle)
+
+    TestHelper.request(
+      TestPlugApp,
+      conn(:get, "/reset_span") |> put_req_header(@dt_header, generate_inbound_payload())
+    )
+
+    span_events = TestHelper.gather_harvest(Collector.SpanEvent.Harvester)
+
+    [function, _, _] =
+      Enum.find(span_events, fn [ev, _, _] -> ev[:name] == "SpanEventTest.Traced.function/0" end)
+
+    [http_request, _, _] =
+      Enum.find(span_events, fn [ev, _, _] ->
+        ev[:name] == "SpanEventTest.Traced.http_request/0"
+      end)
+
+    assert function[:category] == "generic"
+    assert function[:some] == "attribute"
+    refute function[:url]
+
+    assert http_request[:category] == "http"
+    assert http_request[:"http.url"]
+
+    TestHelper.pause_harvest_cycle(Collector.SpanEvent.HarvestCycle)
+    TestHelper.pause_harvest_cycle(Collector.TransactionEvent.HarvestCycle)
   end
 
   test "report span events via function tracer inside transaction inside a DT" do
@@ -137,51 +186,61 @@ defmodule SpanEventTest do
 
     span_events = TestHelper.gather_harvest(Collector.SpanEvent.Harvester)
 
-    [cowboy_event, _, _] =
+    [tx_root_process_event, _, _] =
       Enum.find(span_events, fn [ev, _, _] -> ev[:"nr.entryPoint"] == true end)
 
     [function_event, _, _] =
       Enum.find(span_events, fn [ev, _, _] -> ev[:name] == "SpanEventTest.Traced.hello/0" end)
 
+    [nested_function_event, _, _] =
+      Enum.find(span_events, fn [ev, _, _] -> ev[:name] == "SpanEventTest.Traced.do_hello/0" end)
+
     [task_event, _, _] =
       Enum.find(span_events, fn [ev, _, _] -> String.starts_with?(ev[:name], "Process #PID") end)
 
     [nested_event, _, _] =
-      Enum.find(span_events, fn [ev, _, _] -> ev[:name] == "SpanEventTest.Traced.foo/0" end)
+      Enum.find(span_events, fn [ev, _, _] ->
+        ev[:name] == "SpanEventTest.Traced.http_request/0"
+      end)
 
     [[_intrinsics, tx_event]] = TestHelper.gather_harvest(Collector.TransactionEvent.Harvester)
 
     assert tx_event[:parentId] == "7d3efb1b173fecfa"
 
     assert tx_event[:traceId] == "d6b4ba0c3a712ca"
-    assert cowboy_event[:traceId] == "d6b4ba0c3a712ca"
+    assert tx_root_process_event[:traceId] == "d6b4ba0c3a712ca"
     assert function_event[:traceId] == "d6b4ba0c3a712ca"
+    assert nested_function_event[:traceId] == "d6b4ba0c3a712ca"
     assert task_event[:traceId] == "d6b4ba0c3a712ca"
     assert nested_event[:traceId] == "d6b4ba0c3a712ca"
 
-    assert cowboy_event[:transactionId] == tx_event[:guid]
+    assert tx_root_process_event[:transactionId] == tx_event[:guid]
     assert function_event[:transactionId] == tx_event[:guid]
+    assert nested_function_event[:transactionId] == tx_event[:guid]
     assert task_event[:transactionId] == tx_event[:guid]
     assert nested_event[:transactionId] == tx_event[:guid]
 
     assert tx_event[:sampled] == true
-    assert cowboy_event[:sampled] == true
+    assert tx_root_process_event[:sampled] == true
     assert function_event[:sampled] == true
+    assert nested_function_event[:sampled] == true
     assert task_event[:sampled] == true
     assert nested_event[:sampled] == true
 
     assert tx_event[:priority] == 0.987654
-    assert cowboy_event[:priority] == 0.987654
+    assert tx_root_process_event[:priority] == 0.987654
     assert function_event[:priority] == 0.987654
+    assert nested_function_event[:priority] == 0.987654
     assert task_event[:priority] == 0.987654
     assert nested_event[:priority] == 0.987654
 
     assert function_event[:duration] > 0.009
     assert function_event[:duration] < 0.020
 
-    assert cowboy_event[:parentId] == "5f474d64b9cc9b2a"
-    assert function_event[:parentId] == cowboy_event[:guid]
-    assert task_event[:parentId] == cowboy_event[:guid]
+    assert tx_root_process_event[:parentId] == "5f474d64b9cc9b2a"
+    assert function_event[:parentId] == tx_root_process_event[:guid]
+    assert nested_function_event[:parentId] == function_event[:guid]
+    assert task_event[:parentId] == tx_root_process_event[:guid]
     assert nested_event[:parentId] == task_event[:guid]
 
     assert function_event[:duration] > 0
@@ -195,18 +254,21 @@ defmodule SpanEventTest do
     assert nested_event[:component] == "HTTPoison"
     assert nested_event[:args]
 
+    assert nested_function_event[:category] == "generic"
+    assert nested_function_event[:name] == "SpanEventTest.Traced.do_hello/0"
+
     # Ensure these will encode properly
     Jason.encode!(tx_event)
     Jason.encode!(span_events)
 
-    TestHelper.pause_harvest_cycle(Collector.CustomEvent.HarvestCycle)
+    TestHelper.pause_harvest_cycle(Collector.SpanEvent.HarvestCycle)
     TestHelper.pause_harvest_cycle(Collector.TransactionEvent.HarvestCycle)
   end
 
   describe "Generate span GUIDs" do
     test "for a process" do
       NewRelic.DistributedTrace.generate_guid(pid: self())
-      NewRelic.DistributedTrace.generate_guid(pid: self(), mfa: {:m, :f, 1})
+      NewRelic.DistributedTrace.generate_guid(pid: self(), label: {:m, :f, 1}, ref: make_ref())
     end
   end
 
@@ -222,7 +284,7 @@ defmodule SpanEventTest do
         "tx": "7d3efb1b173fecfa",
         "tr": "d6b4ba0c3a712ca",
         "id": "5f474d64b9cc9b2a",
-        "ti": #{System.system_time(:milliseconds) - 100},
+        "ti": #{System.system_time(:millisecond) - 100},
         "sa": true,
         "pr": 0.987654
       }

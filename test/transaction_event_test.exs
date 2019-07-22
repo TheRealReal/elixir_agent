@@ -24,7 +24,7 @@ defmodule TransactionEventTest do
     tr_1 = %Event{
       web_duration: 0.010,
       database_duration: nil,
-      timestamp: System.system_time(:milliseconds) / 1_000,
+      timestamp: System.system_time(:millisecond) / 1_000,
       name: "WebTransaction/AgentTest/Transaction/name",
       duration: 0.010,
       type: "Transaction",
@@ -115,8 +115,10 @@ defmodule TransactionEventTest do
     TestPlugApp.call(conn(:get, "/"), [])
     TestPlugApp.call(conn(:get, "/"), [])
 
-    events = TestHelper.gather_harvest(Collector.TransactionEvent.Harvester)
+    [event | _] = events = TestHelper.gather_harvest(Collector.TransactionEvent.Harvester)
+
     assert length(events) == 2
+    assert [%{name: "WebTransaction/Plug/GET"}, _] = event
 
     TestHelper.pause_harvest_cycle(Collector.TransactionEvent.HarvestCycle)
   end

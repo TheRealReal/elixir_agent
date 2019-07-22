@@ -16,6 +16,11 @@ defmodule NewRelic.Transaction do
     # ...
   end
   ```
+
+  To ignore reporting the transaction use:
+  ```elixir
+  NewRelic.ignore_transaction()
+  ```
   """
 
   defmacro __using__(_) do
@@ -45,6 +50,20 @@ defmodule NewRelic.Transaction do
     NewRelic.DistributedTrace.Tracker.cleanup(self())
     NewRelic.Transaction.Plug.add_stop_attrs(conn)
     NewRelic.Transaction.Reporter.fail(error)
-    NewRelic.Transaction.Reporter.stop(conn)
+    NewRelic.Transaction.Reporter.complete()
+  end
+
+  @doc false
+  def start_transaction(category, name) do
+    NewRelic.Transaction.Reporter.start_other_transaction(category, name)
+
+    NewRelic.DistributedTrace.generate_new_context()
+    |> NewRelic.DistributedTrace.track_transaction(transport_type: "Other")
+  end
+
+  @doc false
+  def ignore_transaction() do
+    NewRelic.Transaction.Reporter.ignore_transaction()
+    NewRelic.DistributedTrace.Tracker.cleanup(self())
   end
 end

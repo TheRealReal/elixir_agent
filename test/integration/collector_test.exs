@@ -6,17 +6,6 @@ defmodule CollectorIntegrationTest do
 
   # mix test test/integration --include skip
 
-  defmodule EvilCollectorPlug do
-    import Plug.Conn
-
-    def init(options), do: options
-
-    def call(conn, test_pid: test_pid) do
-      send(test_pid, :attempt)
-      send_resp(conn, 503, ':(')
-    end
-  end
-
   setup do
     GenServer.call(Collector.AgentRun, :connected)
     System.put_env("NEW_RELIC_HARVEST_ENABLED", "true")
@@ -44,7 +33,7 @@ defmodule CollectorIntegrationTest do
   end
 
   test "Can post a metric" do
-    ts_end = System.system_time(:seconds)
+    ts_end = System.system_time(:second)
     ts_start = ts_end - 60
     agent_run_id = Collector.AgentRun.agent_run_id()
 
