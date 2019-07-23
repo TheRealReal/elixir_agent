@@ -22,10 +22,12 @@ defmodule NewRelic.DistributedTrace.Context do
     with {:ok, json} <- Base.decode64(raw_payload),
          {:ok, map} <- Jason.decode(json),
          context <- validate(map) do
+      NewRelic.report_metric(:supportability, [:dt, :accept, :success])
       context
     else
       error ->
-        NewRelic.log(:error, "Bad DT Payload: #{inspect(error)} #{inspect(raw_payload)}")
+        NewRelic.report_metric(:supportability, [:dt, :accept, :parse_error])
+        NewRelic.log(:debug, "Bad DT Payload: #{inspect(error)} #{inspect(raw_payload)}")
         nil
     end
   end
@@ -70,7 +72,7 @@ defmodule NewRelic.DistributedTrace.Context do
           "tr" => context.trace_id,
           "pr" => context.priority,
           "sa" => context.sampled,
-          "ti" => System.system_time(:milliseconds)
+          "ti" => System.system_time(:millisecond)
         }
         |> maybe_put(:span_guid, "id", context.sampled, current_span_guid)
         |> maybe_put(:trust_key, "tk", context.account_id, context.trust_key)

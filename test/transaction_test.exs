@@ -92,6 +92,18 @@ defmodule TransactionTest do
       Process.sleep(100)
       send_resp(conn, 200, "spawn")
     end
+
+    get "/ignored" do
+      NewRelic.ignore_transaction()
+      send_resp(conn, 200, "ignored")
+    end
+
+    get "/total_time" do
+      t1 = Task.async(fn -> ExternalService.query(200) end)
+      ExternalService.query(200)
+      Task.await(t1)
+      send_resp(conn, 200, "ok")
+    end
   end
 
   test "Basic transaction" do
@@ -103,10 +115,10 @@ defmodule TransactionTest do
 
     assert Enum.find(events, fn [_, event] ->
              event[:path] == "/foo/1" && event[:name] == "/Plug/GET//foo/:blah" &&
-               event[:foo] == "BAR" && event[:duration_us] > 0 && event[:duration_us] < 5000 &&
+               event[:foo] == "BAR" && event[:duration_us] > 0 && event[:duration_us] < 10_000 &&
                event[:start_time] < 2_000_000_000_000 && event[:start_time] > 1_400_000_000_000 &&
                event[:start_time_mono] == nil && event[:test_attribute] == "test_value" &&
-               event[:status] == 200
+               event[:"nr.apdexPerfZone"] == "S" && event[:status] == 200
            end)
   end
 
@@ -159,6 +171,7 @@ defmodule TransactionTest do
   end
 
   test "Transaction with traced external service call" do
+    TestHelper.trigger_report(NewRelic.Aggregate.Reporter)
     TestHelper.restart_harvest_cycle(Collector.TransactionEvent.HarvestCycle)
     TestHelper.restart_harvest_cycle(Collector.CustomEvent.HarvestCycle)
 
@@ -225,7 +238,7 @@ defmodule TransactionTest do
     assert Enum.find(events, fn [_, event] ->
              event[:path] == "/spawn" && event[:inside] == "spawned" && event[:nested] == "spawn" &&
                event[:not_linked] == "still_tracked" && event[:nested_inside] == "nolink" &&
-               event[:rabbit] == "hole" && event[:status] == 200
+               event[:rabbit] == "hole" && event[:process_spawns] == 5 && event[:status] == 200
            end)
   end
 
@@ -240,5 +253,30 @@ defmodule TransactionTest do
              event[:path] == "/map" && event[:plain] == "attr" && event["deep.foo.bar"] == "baz" &&
                event["deep.foo.baz"] == "bar"
            end)
+  end
+
+  test "Allow a transaction to be ignored" do
+    TestHelper.restart_harvest_cycle(Collector.TransactionEvent.HarvestCycle)
+    Task.Supervisor.start_link(name: TestTaskSup)
+
+    TestHelper.request(TestPlugApp, conn(:get, "/ignored"))
+
+    events = TestHelper.gather_harvest(Collector.TransactionEvent.Harvester)
+
+    assert events == []
+  end
+
+  test "Calculate total time" do
+    TestHelper.restart_harvest_cycle(Collector.TransactionEvent.HarvestCycle)
+
+    TestHelper.request(TestPlugApp, conn(:get, "/total_time"))
+
+    [[_, event]] = TestHelper.gather_harvest(Collector.TransactionEvent.Harvester)
+
+    assert event[:duration_s] >= 0.2
+    assert event[:duration_s] < 0.3
+
+    assert event[:total_time_s] > 0.3
+    assert event[:total_time_s] < 0.5
   end
 end

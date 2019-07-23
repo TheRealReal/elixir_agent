@@ -4,6 +4,7 @@ defmodule NewRelic.DistributedTrace do
   @moduledoc false
 
   alias NewRelic.DistributedTrace.{Context, Tracker}
+  alias NewRelic.Harvest.Collector.AgentRun
   alias NewRelic.Transaction
 
   def accept_distributed_trace_payload(:http, conn) do
@@ -24,6 +25,86 @@ defmodule NewRelic.DistributedTrace do
     end
   end
 
+  def generate_new_context() do
+    {priority, sampled} = generate_sampling()
+
+    %Context{
+      account_id: AgentRun.account_id(),
+      app_id: AgentRun.primary_application_id(),
+      trust_key: AgentRun.trusted_account_key(),
+      priority: priority,
+      sampled: sampled
+    }
+  end
+
+  def track_transaction(context, transport_type: type) do
+    context
+    |> assign_transaction_guid()
+    |> report_attributes(transport_type: type)
+    |> convert_to_outbound()
+    |> set_tracing_context()
+  end
+
+  def report_attributes(
+        %Context{parent_id: nil} = context,
+        transport_type: _type
+      ) do
+    [
+      guid: context.guid,
+      traceId: context.guid,
+      priority: context.priority,
+      sampled: context.sampled
+    ]
+    |> NewRelic.add_attributes()
+
+    context
+  end
+
+  def report_attributes(context, transport_type: type) do
+    [
+      "parent.type": context.type,
+      "parent.app": context.app_id,
+      "parent.account": context.account_id,
+      "parent.transportType": type,
+      "parent.transportDuration": transport_duration(context.timestamp),
+      parentId: context.parent_id,
+      parentSpanId: context.span_guid,
+      guid: context.guid,
+      traceId: context.trace_id,
+      priority: context.priority,
+      sampled: context.sampled
+    ]
+    |> NewRelic.add_attributes()
+
+    context
+  end
+
+  def convert_to_outbound(%Context{parent_id: nil} = context) do
+    %Context{
+      account_id: AgentRun.account_id(),
+      app_id: AgentRun.primary_application_id(),
+      parent_id: nil,
+      trust_key: context.trust_key,
+      guid: context.guid,
+      trace_id: context.guid,
+      priority: context.priority,
+      sampled: context.sampled
+    }
+  end
+
+  def convert_to_outbound(%Context{} = context) do
+    %Context{
+      account_id: AgentRun.account_id(),
+      app_id: AgentRun.primary_application_id(),
+      parent_id: context.guid,
+      trust_key: context.trust_key,
+      guid: context.guid,
+      trace_id: context.trace_id,
+      priority: context.priority,
+      sampled: context.sampled
+    }
+  end
+
   def set_tracing_context(context) do
     Tracker.store(self(), context: context)
   end
@@ -41,7 +122,7 @@ defmodule NewRelic.DistributedTrace do
   end
 
   def set_span(:generic, attrs) do
-    Process.put(:nr_current_span_attrs, attrs)
+    Process.put(:nr_current_span_attrs, Enum.into(attrs, %{}))
   end
 
   def set_span(:http, url: url, method: method, component: component) do
@@ -71,9 +152,10 @@ defmodule NewRelic.DistributedTrace do
 
   def set_current_span(label: label, ref: ref) do
     current = {label, ref}
-    previous = Process.get(:nr_current_span)
+    previous_span = Process.get(:nr_current_span)
+    previous_span_attrs = Process.get(:nr_current_span_attrs)
     Process.put(:nr_current_span, current)
-    {current, previous}
+    {current, previous_span, previous_span_attrs}
   end
 
   def get_current_span_guid() do
@@ -83,8 +165,26 @@ defmodule NewRelic.DistributedTrace do
     end
   end
 
-  def reset_span(previous: previous) do
-    Process.put(:nr_current_span, previous)
+  def reset_span(previous_span: previous_span, previous_span_attrs: previous_span_attrs) do
+    Process.put(:nr_current_span, previous_span)
+    Process.put(:nr_current_span_attrs, previous_span_attrs)
+  end
+
+  defp generate_sampling() do
+    case {generate_sample?(), generate_priority()} do
+      {true, priority} -> {priority + 1, true}
+      {false, priority} -> {priority, false}
+    end
+  end
+
+  defp generate_sample?() do
+    NewRelic.DistributedTrace.BackoffSampler.sample?()
+  end
+
+  defp generate_priority, do: :rand.uniform() |> Float.round(6)
+
+  def assign_transaction_guid(context) do
+    Map.put(context, :guid, generate_guid())
   end
 
   def generate_guid(), do: :crypto.strong_rand_bytes(8) |> Base.encode16() |> String.downcase()
@@ -105,5 +205,9 @@ defmodule NewRelic.DistributedTrace do
     |> to_string()
     |> String.slice(0..4)
     |> String.downcase()
+  end
+
+  defp transport_duration(context_start_time) do
+    (System.system_time(:millisecond) - context_start_time) / 1_000
   end
 end

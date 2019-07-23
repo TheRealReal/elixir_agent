@@ -1,5 +1,117 @@
 ## CHANGELOG
 
+### `v1.9.12`
+
+Fixes
+
+* Prevent a rare harvester leak. [#124](https://github.com/newrelic/elixir_agent/pull/124)
+
+### `v1.9.11`
+
+Fixes
+
+* Protect against missing attribute under race condition. [#120](https://github.com/newrelic/elixir_agent/pull/120)
+
+### `v1.9.10`
+
+Fixes
+
+* Revert `async_nolink` change. [#119](https://github.com/newrelic/elixir_agent/pull/119)
+
+### `v1.9.9`
+
+Fixes
+
+* Fix a race condition around error reporting and `async_nolink` [#118](https://github.com/newrelic/elixir_agent/pull/118). Thanks @zoevkay!
+
+### `v1.9.8`
+
+Fixes
+
+* Fix a bug causing extra spans to be reported [#116](https://github.com/newrelic/elixir_agent/pull/116)
+
+### `v1.9.7`
+
+Tweaks
+
+* Improve formatting for `EXIT` errors
+  - [#112](https://github.com/newrelic/elixir_agent/pull/112)
+  - [#113](https://github.com/newrelic/elixir_agent/pull/113)
+
+### `v1.9.5`
+
+Tweaks
+
+* Track CPU count. [#110](https://github.com/newrelic/elixir_agent/pull/110)
+
+### `v1.9.4`
+
+Fixes
+
+* Fix a bug in `PriorityQueue`. [#109](https://github.com/newrelic/elixir_agent/pull/109) Thanks @jasondew!
+
+### `v1.9.3`
+
+Tweaks
+
+* Lowers the log level for harvester output. [#105](https://github.com/newrelic/elixir_agent/pull/105)
+
+### `v1.9.2`
+
+Fixes
+
+* Fix a error that can happen if required attributes aren't captured. [#103](https://github.com/newrelic/elixir_agent/pull/103)
+
+### `v1.9.1`
+
+Fixes
+
+* Fix the transaction event name attribute. [#100](https://github.com/newrelic/elixir_agent/pull/100)
+
+### `v1.9.0`
+
+Features
+
+* Use erlang's `httpc` client. [#70](https://github.com/newrelic/elixir_agent/pull/70)
+* Calculate and report the Total Time in a Transaction. [#98](https://github.com/newrelic/elixir_agent/pull/98)
+
+Fixes
+
+* Attempt to flush each harvester upon graceful shutdown. [#94](https://github.com/newrelic/elixir_agent/pull/94)
+* Report External metrics based on transaction type. [#99](https://github.com/newrelic/elixir_agent/pull/99)
+
+-------
+
+### `v1.8.0`
+
+Features
+
+* Enable ignoring a Transaction. [#93](https://github.com/newrelic/elixir_agent/pull/93)
+* Track the number of processes spawned during a Transaction. [#88](https://github.com/newrelic/elixir_agent/pull/88)
+
+Fixes
+
+* Handle error fetching AWS fargate metadata. [#89](https://github.com/newrelic/elixir_agent/pull/89)
+* Avoid a compiler warning for some traced functions. [#92](https://github.com/newrelic/elixir_agent/pull/92)
+* Prevent nested spans from duplicating attributes. [#97](https://github.com/newrelic/elixir_agent/pull/97)
+
+-------
+
+### `v1.7.0`
+
+* Support for "Other" (non-web) Transactions. [#84](https://github.com/newrelic/elixir_agent/pull/84)
+* Calculate and report Apdex metric. [#87](https://github.com/newrelic/elixir_agent/pull/87)
+
+-------
+
+### `v1.6.2`
+
+* Improve error logging when encountering a bad DT payload
+
+### `v1.6.1`
+
+* Clear up some deprecation warnings in Elixir `1.8.0`
+
 ### `v1.6.0`
 
 * Add support for applying labels. [#79](https://github.com/newrelic/elixir_agent/pull/79)

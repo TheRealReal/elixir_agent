@@ -38,7 +38,7 @@ defmodule NewRelic.Transaction.Plug do
 
   defp before_send(conn) do
     add_stop_attrs(conn)
-    Transaction.Reporter.stop(conn)
+    Transaction.Reporter.complete()
     conn
   end
 
@@ -60,6 +60,7 @@ defmodule NewRelic.Transaction.Plug do
     info = Process.info(self(), [:memory, :reductions])
 
     [
+      plug_name: plug_name(conn),
       status: conn.status,
       memory_kb: info[:memory] / @kb,
       reductions: info[:reductions]

@@ -15,22 +15,22 @@ defmodule NewRelic.Error.Reporter do
   end
 
   def report_process_error(report) do
-    {_kind, exception, stacktrace} = parse_error_info(report[:error_info])
+    {kind, exception, stacktrace} = parse_error_info(report[:error_info])
 
     {exception_type, exception_reason, exception_stacktrace} =
-      Util.Error.normalize(exception, stacktrace, report[:initial_call])
+      Util.Error.normalize(kind, exception, stacktrace, report[:initial_call])
 
     process_name = parse_process_name(report[:registered_name], stacktrace)
     expected = parse_error_expected(exception)
     automatic_attributes = NewRelic.Config.automatic_attributes()
 
     Collector.ErrorTrace.Harvester.report_error(%NewRelic.Error.Trace{
-      timestamp: System.system_time(:milliseconds) / 1_000,
-      error_type: inspect(exception_type),
+      timestamp: System.system_time(:millisecond) / 1_000,
+      error_type: exception_type,
       message: exception_reason,
       expected: expected,
       stack_trace: exception_stacktrace,
-      transaction_name: "WebTransaction/Elixir/ElixirProcess//#{process_name}",
+      transaction_name: "OtherTransaction/Elixir/ElixirProcess//#{process_name}",
       user_attributes:
         Map.merge(automatic_attributes, %{
           process: process_name
@@ -38,11 +38,11 @@ defmodule NewRelic.Error.Reporter do
     })
 
     Collector.TransactionErrorEvent.Harvester.report_error(%NewRelic.Error.Event{
-      timestamp: System.system_time(:milliseconds) / 1_000,
-      error_class: inspect(exception_type),
+      timestamp: System.system_time(:millisecond) / 1_000,
+      error_class: exception_type,
       error_message: exception_reason,
       expected: expected,
-      transaction_name: "WebTransaction/Elixir/ElixirProcess//#{process_name}",
+      transaction_name: "OtherTransaction/Elixir/ElixirProcess//#{process_name}",
       user_attributes:
         Map.merge(automatic_attributes, %{
           process: process_name,

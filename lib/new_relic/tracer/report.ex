@@ -146,8 +146,26 @@ defmodule NewRelic.Tracer.Report do
       end_time_mono: end_time_mono
     })
 
+    maybe_url =
+      case args do
+        [first | [second | _]] when is_atom(first) and is_binary(second) -> second
+        [first | _] when is_binary(first) -> first
+        _ -> nil
+      end
+
+    {long_name, short_name} =
+      if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
+        hostname = URI.parse(maybe_url) |> Map.get(:host)
+        {hostname, hostname}
+      else
+        {
+          function_name({module, function, arity}, name),
+          function_name({module, function}, name)
+        }
+      end
+
     NewRelic.report_span(
-      timestamp_ms: System.convert_time_unit(start_time, :native, :milliseconds),
+      timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
       duration_s: duration_s,
       name: long_name,
       edge: [span: id, parent: parent_id],
@@ -170,6 +188,8 @@ defmodule NewRelic.Tracer.Report do
       },
       %{duration_ms: duration_ms, call_count: 1}
     )
+
+    Transaction.Reporter.track_metric({:external, duration_s})
 
     NewRelic.report_metric(
       {:external, "/#{short_name}"},
@@ -204,7 +224,7 @@ defmodule NewRelic.Tracer.Report do
     })
 
     NewRelic.report_span(
-      timestamp_ms: System.convert_time_unit(start_time, :native, :milliseconds),
+      timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
       duration_s: duration_s,
       name: function_name({module, function, arity}, name),
       edge: [span: id, parent: parent_id],
@@ -219,7 +239,7 @@ defmodule NewRelic.Tracer.Report do
   end
 
   def duration_ms(start_time_mono, end_time_mono),
-    do: System.convert_time_unit(end_time_mono - start_time_mono, :native, :milliseconds)
+    do: System.convert_time_unit(end_time_mono - start_time_mono, :native, :millisecond)
 
   defp function_name({m, f}, f), do: "#{inspect(m)}.#{f}"
   defp function_name({m, f}, i), do: "#{inspect(m)}.#{f}:#{i}"

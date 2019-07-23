@@ -152,7 +152,7 @@ defmodule NewRelic.Tracer.Macro do
       start_time = System.system_time()
       start_time_mono = System.monotonic_time()
 
-      {span, previous_span} =
+      {span, previous_span, previous_span_attrs} =
         NewRelic.DistributedTrace.set_current_span(
           label: {unquote(module), unquote(function), unquote(length(args))},
           ref: make_ref()
@@ -162,7 +162,6 @@ defmodule NewRelic.Tracer.Macro do
         unquote(body)
       after
         end_time_mono = System.monotonic_time()
-        NewRelic.DistributedTrace.reset_span(previous: previous_span)
 
         Tracer.Report.call(
           {unquote(module), unquote(function), unquote(build_call_args(args))},
@@ -170,6 +169,11 @@ defmodule NewRelic.Tracer.Macro do
           inspect(self()),
           {span, previous_span || :root},
           {start_time, start_time_mono, end_time_mono}
+        )
+
+        NewRelic.DistributedTrace.reset_span(
+          previous_span: previous_span,
+          previous_span_attrs: previous_span_attrs
         )
       end
     end
@@ -190,13 +194,12 @@ defmodule NewRelic.Tracer.Macro do
   # Strip default arguments
   def rewrite_call_term({:\\, _, [arg, _default]}), do: arg
 
-  # Search for variables on the left side of a pattern match
-  # and prefix them with an underscore so they don't end up as
-  # unused variables
-  def rewrite_call_term({:=, metadata, [pattern, {name, _, context} = value]})
-      when is_variable(name, context) do
-    ignored_pattern = Macro.postwalk(pattern, &rewrite_match_pattern/1)
-    {:=, metadata, [ignored_pattern, value]}
+  # Drop the de-structuring side of a pattern match
+  def rewrite_call_term({:=, _, [left, right]}) do
+    cond do
+      is_variable?(right) -> right
+      is_variable?(left) -> left
+    end
   end
 
   # Replace ignored variables with an atom
@@ -209,13 +212,6 @@ defmodule NewRelic.Tracer.Macro do
 
   def rewrite_call_term(term), do: term
 
-  def rewrite_match_pattern({name, metadata, context} = term)
-      when is_variable(name, context) do
-    case Atom.to_string(name) do
-      "_" <> _rest -> term
-      name_str -> {:"_#{name_str}", metadata, context}
-    end
-  end
-
-  def rewrite_match_pattern(term), do: term
+  def is_variable?({name, _, context}) when is_variable(name, context), do: true
+  def is_variable?(_term), do: false
 end
