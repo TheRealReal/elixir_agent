@@ -58,6 +58,39 @@ defmodule NewRelic.Tracer do
     send_resp(conn, 200, "ok")
   end
   ```
+
+  ###### Customize external traces
+
+  Its possible to report external trace with custom names.
+
+  To change External Service calls names, use this syntax:
+
+  ```elixir
+  defmodule MyExternalService do
+    use NewRelic.Tracer
+
+    @trace {:query, category: :external, reported_name: :external_host}
+    def query(args) do
+      # Make the call
+    end
+
+    def external_host(_args), do: "external-domain.net"
+  end
+  ```
+
+  Alternatively it also can be set with a short and a long name:
+
+  ```elixir
+  defmodule MyExternalService do
+    use NewRelic.Tracer
+
+    @trace {:query, category: :external, reported_name_tuple: {"/users", "some-domain.net/users"}}
+    def query(args) do
+      # Make the call
+    end
+  end
+  ```
+
   """
 
   defmacro __using__(_args) do

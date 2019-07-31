@@ -161,7 +161,7 @@ defmodule SpanEventTest do
 
     [http_request, _, _] =
       Enum.find(span_events, fn [ev, _, _] ->
-        ev[:name] == "SpanEventTest.Traced.http_request/0"
+        ev[:name] == "SpanEventTest.Traced.http_request"
       end)
 
     assert function[:category] == "generic"
@@ -200,7 +200,7 @@ defmodule SpanEventTest do
 
     [nested_event, _, _] =
       Enum.find(span_events, fn [ev, _, _] ->
-        ev[:name] == "SpanEventTest.Traced.http_request/0"
+        ev[:name] == "SpanEventTest.Traced.http_request"
       end)
 
     [[_intrinsics, tx_event]] = TestHelper.gather_harvest(Collector.TransactionEvent.Harvester)

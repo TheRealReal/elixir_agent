@@ -90,7 +90,6 @@ defmodule MetricTransactionTest do
     assert [_, [1, _, _, _, _, _]] = apdex
 
     assert TestHelper.find_metric(metrics, "External/MetricTransactionTest.External.call/all")
-    assert TestHelper.find_metric(metrics, "External/allWeb")
   end
 
   test "Failed transaction" do

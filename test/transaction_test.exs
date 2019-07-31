@@ -186,13 +186,13 @@ defmodule TransactionTest do
 
     assert Enum.find(tx_events, fn [_, event] ->
              event[:path] == "/service" && event[:external_call_count] == 2 &&
-               event[:"external.TransactionTest.ExternalService.query.call_count"] == 2 &&
+               event[:"external.TransactionTest.ExternalService.query/1.call_count"] == 2 &&
                event[:status] == 200
            end)
 
     assert Enum.find(events, fn [_, event, _] ->
              event[:category] == :Metric && event[:name] == :FunctionTrace &&
-               event[:mfa] == "TransactionTest.ExternalService.query/1" && event[:call_count] == 2
+               event[:mfa] == "TransactionTest.ExternalService.query" && event[:call_count] == 2
            end)
 
     assert Enum.find(events, fn [_, event, _] ->

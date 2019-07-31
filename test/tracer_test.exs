@@ -22,6 +22,16 @@ defmodule TracerTest do
     def query do
     end
 
+    @trace {:query, category: :external, reported_name: :hostname}
+    def hostname_query do
+    end
+
+    def hostname, do: "somedomain.com"
+
+    @trace {:query, category: :external, reported_name_tuple: {"/users", "some-domain.net/users"}}
+    def name_query do
+    end
+
     @trace :default
     def default(arg \\ 3), do: arg
 
@@ -128,7 +138,37 @@ defmodule TracerTest do
     events = TestHelper.gather_harvest(Collector.CustomEvent.Harvester)
 
     assert Enum.find(events, fn [_, event, _] ->
-             event[:category] == :Metric && event[:mfa] == "TracerTest.Traced.query/0" &&
+             event[:category] == :Metric && event[:mfa] == "TracerTest.Traced.query" &&
+               event[:metric_category] == :external && event[:call_count] == 2
+           end)
+  end
+
+  test "Trace function with reported_name" do
+    TestHelper.restart_harvest_cycle(Collector.CustomEvent.HarvestCycle)
+
+    Traced.hostname_query()
+    Traced.hostname_query()
+
+    TestHelper.trigger_report(NewRelic.Aggregate.Reporter)
+    events = TestHelper.gather_harvest(Collector.CustomEvent.Harvester)
+
+    assert Enum.find(events, fn [_, event, _] ->
+             event[:category] == :Metric && event[:mfa] == "somedomain.com" &&
+               event[:metric_category] == :external && event[:call_count] == 2
+           end)
+  end
+
+  test "Trace function with reported_name_tuple" do
+    TestHelper.restart_harvest_cycle(Collector.CustomEvent.HarvestCycle)
+
+    Traced.name_query()
+    Traced.name_query()
+
+    TestHelper.trigger_report(NewRelic.Aggregate.Reporter)
+    events = TestHelper.gather_harvest(Collector.CustomEvent.Harvester)
+
+    assert Enum.find(events, fn [_, event, _] ->
+             event[:category] == :Metric && event[:mfa] == "some-domain.net/users" &&
                event[:metric_category] == :external && event[:call_count] == 2
            end)
   end

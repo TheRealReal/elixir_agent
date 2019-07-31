@@ -63,7 +63,6 @@ defmodule OtherTransactionTest do
     assert TestHelper.find_metric(metrics, "OtherTransaction/TransactionCategory/MyTaskName")
 
     assert TestHelper.find_metric(metrics, "External/OtherTransactionTest.External.call/all")
-    assert TestHelper.find_metric(metrics, "External/allOther")
 
     span_events = TestHelper.gather_harvest(Collector.SpanEvent.Harvester)
     assert length(span_events) == 3

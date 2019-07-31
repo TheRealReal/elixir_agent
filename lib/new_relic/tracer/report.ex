@@ -73,8 +73,6 @@ defmodule NewRelic.Tracer.Report do
         {id, parent_id},
         {start_time, start_time_mono, end_time_mono}
       ) do
-    arity = length(args)
-
     maybe_url =
       case args do
         [first | [second | _]] when is_atom(first) and is_binary(second) -> second
@@ -82,11 +80,13 @@ defmodule NewRelic.Tracer.Report do
         _ -> nil
       end
 
-    {long_name, short_name} =
+    reported_name_tuple =
       if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
-        target_host_name = URI.parse(maybe_url) |> Map.get(:host)
-        {target_host_name, target_host_name}
+        hostname = URI.parse(maybe_url) |> Map.get(:host)
+        {hostname, hostname}
       else
+        arity = length(args)
+
         {
           function_name({module, function, arity}, name),
           function_name({module, function}, name)
@@ -95,7 +95,7 @@ defmodule NewRelic.Tracer.Report do
 
     __MODULE__.call(
       {module, function, args},
-      {name, category: :external, reported_name: {short_name, long_name}},
+      {name, category: :external, reported_name_tuple: reported_name_tuple},
       pid,
       {id, parent_id},
       {start_time, start_time_mono, end_time_mono}
@@ -110,11 +110,11 @@ defmodule NewRelic.Tracer.Report do
         {start_time, start_time_mono, end_time_mono}
       )
       when is_atom(reported_name_func) do
-    reported_name_tuple = apply(module, reported_name_func, [])
+    reported_name = apply(module, reported_name_func, args)
 
     __MODULE__.call(
       {module, function, args},
-      {name, category: :external, reported_name: reported_name_tuple},
+      {name, category: :external, reported_name_tuple: {reported_name, reported_name}},
       pid,
       {id, parent_id},
       {start_time, start_time_mono, end_time_mono}
@@ -123,7 +123,7 @@ defmodule NewRelic.Tracer.Report do
 
   def call(
         {module, function, args},
-        {name, category: :external, reported_name: {short_name, long_name}},
+        {name, category: :external, reported_name_tuple: {short_name, long_name}},
         pid,
         {id, parent_id},
         {start_time, start_time_mono, end_time_mono}
@@ -145,24 +145,6 @@ defmodule NewRelic.Tracer.Report do
       start_time_mono: start_time_mono,
       end_time_mono: end_time_mono
     })
-
-    maybe_url =
-      case args do
-        [first | [second | _]] when is_atom(first) and is_binary(second) -> second
-        [first | _] when is_binary(first) -> first
-        _ -> nil
-      end
-
-    {long_name, short_name} =
-      if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
-        hostname = URI.parse(maybe_url) |> Map.get(:host)
-        {hostname, hostname}
-      else
-        {
-          function_name({module, function, arity}, name),
-          function_name({module, function}, name)
-        }
-      end
 
     NewRelic.report_span(
       timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
@@ -189,10 +171,8 @@ defmodule NewRelic.Tracer.Report do
       %{duration_ms: duration_ms, call_count: 1}
     )
 
-    Transaction.Reporter.track_metric({:external, duration_s})
-
     NewRelic.report_metric(
-      {:external, "/#{short_name}"},
+      {:external, "/#{long_name}"},
       duration_s: duration_s
     )
   end
