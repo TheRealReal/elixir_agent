@@ -67,67 +67,37 @@ defmodule NewRelic.Tracer.Report do
   end
 
   def call(
-        {module, function, args},
+        {module, function, _args} = mfa,
         {name, category: :external},
         pid,
-        {id, parent_id},
-        {start_time, start_time_mono, end_time_mono}
+        ids,
+        times
       ) do
-    arity = length(args)
+    metric_name = function_name({module, function}, name)
 
-    maybe_url =
-      case args do
-        [first | [second | _]] when is_atom(first) and is_binary(second) -> second
-        [first | _] when is_binary(first) -> first
-        _ -> nil
-      end
+    __MODULE__.call(mfa, {name, category: :external, metric_name: metric_name}, pid, ids, times)
+  end
 
-    {long_name, short_name} =
-      if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
-        target_host_name = URI.parse(maybe_url) |> Map.get(:host)
-        {target_host_name, target_host_name}
-      else
-        {
-          function_name({module, function, arity}, name),
-          function_name({module, function}, name)
-        }
-      end
+  def call(
+        {_m, _f, args} = mfa,
+        {name, category: :external, metric_name: {module, function}},
+        pid,
+        ids,
+        times
+      ) do
+    metric_name = apply(module, function, args)
 
-    __MODULE__.call(
-      {module, function, args},
-      {name, category: :external, reported_name: {short_name, long_name}},
-      pid,
-      {id, parent_id},
-      {start_time, start_time_mono, end_time_mono}
-    )
+    __MODULE__.call(mfa, {name, category: :external, metric_name: metric_name}, pid, ids, times)
   end
 
   def call(
         {module, function, args},
-        {name, category: :external, reported_name: reported_name_func},
+        {name, category: :external, metric_name: metric_name},
         pid,
         {id, parent_id},
         {start_time, start_time_mono, end_time_mono}
       )
-      when is_atom(reported_name_func) do
-    reported_name_tuple = apply(module, reported_name_func, [])
-
-    __MODULE__.call(
-      {module, function, args},
-      {name, category: :external, reported_name: reported_name_tuple},
-      pid,
-      {id, parent_id},
-      {start_time, start_time_mono, end_time_mono}
-    )
-  end
-
-  def call(
-        {module, function, args},
-        {name, category: :external, reported_name: {short_name, long_name}},
-        pid,
-        {id, parent_id},
-        {start_time, start_time_mono, end_time_mono}
-      ) do
+      when is_binary(metric_name) do
     duration_ms = duration_ms(start_time_mono, end_time_mono)
     duration_s = duration_ms / 1000
     arity = length(args)
@@ -192,7 +162,7 @@ defmodule NewRelic.Tracer.Report do
     Transaction.Reporter.track_metric({:external, duration_s})
 
     NewRelic.report_metric(
-      {:external, "/#{short_name}"},
+      {:external, metric_name},
       duration_s: duration_s
     )
   end
