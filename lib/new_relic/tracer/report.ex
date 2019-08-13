@@ -67,135 +67,38 @@ defmodule NewRelic.Tracer.Report do
   end
 
   def call(
-        {module, function, args},
+        {module, function, _args} = mfa,
         {name, category: :external},
         pid,
-        {id, parent_id},
-        {start_time, start_time_mono, end_time_mono}
+        ids,
+        times
       ) do
-    arity = length(args)
+    metric_name = function_name({module, function}, name)
 
-    maybe_url =
-      case args do
-        [first | [second | _]] when is_atom(first) and is_binary(second) -> second
-        [first | _] when is_binary(first) -> first
-        _ -> nil
-      end
-
-    {long_name, short_name} =
-      if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
-        target_host_name = URI.parse(maybe_url) |> Map.get(:host)
-        {target_host_name, target_host_name}
-      else
-        {
-          function_name({module, function, arity}, name),
-          function_name({module, function}, name)
-        }
-      end
-
-    __MODULE__.call(
-      {module, function, args},
-      {name, category: :external, reported_name: {short_name, long_name}},
-      pid,
-      {id, parent_id},
-      {start_time, start_time_mono, end_time_mono}
-    )
+    external_call(mfa, name, metric_name, pid, ids, times)
   end
 
   def call(
-        {module, function, args},
-        {name, category: :external, reported_name: reported_name_func},
+        {_m, _f, args} = mfa,
+        {name, category: :external, metric_name: {module, function}},
         pid,
-        {id, parent_id},
-        {start_time, start_time_mono, end_time_mono}
+        ids,
+        times
+      ) do
+    metric_name = apply(module, function, args)
+
+    external_call(mfa, name, metric_name, pid, ids, times)
+  end
+
+  def call(
+        mfa,
+        {name, category: :external, metric_name: metric_name},
+        pid,
+        ids,
+        times
       )
-      when is_atom(reported_name_func) do
-    reported_name_tuple = apply(module, reported_name_func, [])
-
-    __MODULE__.call(
-      {module, function, args},
-      {name, category: :external, reported_name: reported_name_tuple},
-      pid,
-      {id, parent_id},
-      {start_time, start_time_mono, end_time_mono}
-    )
-  end
-
-  def call(
-        {module, function, args},
-        {name, category: :external, reported_name: {short_name, long_name}},
-        pid,
-        {id, parent_id},
-        {start_time, start_time_mono, end_time_mono}
-      ) do
-    duration_ms = duration_ms(start_time_mono, end_time_mono)
-    duration_s = duration_ms / 1000
-    arity = length(args)
-
-    Transaction.Reporter.add_trace_segment(%{
-      module: module,
-      function: function,
-      arity: arity,
-      name: name,
-      args: args,
-      pid: pid,
-      id: id,
-      parent_id: parent_id,
-      start_time: start_time,
-      start_time_mono: start_time_mono,
-      end_time_mono: end_time_mono
-    })
-
-    maybe_url =
-      case args do
-        [first | [second | _]] when is_atom(first) and is_binary(second) -> second
-        [first | _] when is_binary(first) -> first
-        _ -> nil
-      end
-
-    {long_name, short_name} =
-      if maybe_url && String.match?(maybe_url, ~r/\Ahttp/) do
-        hostname = URI.parse(maybe_url) |> Map.get(:host)
-        {hostname, hostname}
-      else
-        {
-          function_name({module, function, arity}, name),
-          function_name({module, function}, name)
-        }
-      end
-
-    NewRelic.report_span(
-      timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
-      duration_s: duration_s,
-      name: long_name,
-      edge: [span: id, parent: parent_id],
-      category: "http",
-      attributes: Map.put(NewRelic.DistributedTrace.get_span_attrs(), :args, inspect(args))
-    )
-
-    NewRelic.incr_attributes(
-      external_call_count: 1,
-      external_duration_ms: duration_ms,
-      "external.#{short_name}.call_count": 1,
-      "external.#{short_name}.duration_ms": duration_ms
-    )
-
-    NewRelic.report_aggregate(
-      %{
-        name: :FunctionTrace,
-        mfa: long_name,
-        metric_category: :external
-      },
-      %{duration_ms: duration_ms, call_count: 1}
-    )
-
-    Transaction.Reporter.track_metric({:external, duration_s})
-
-    NewRelic.report_metric(
-      {:external, "/#{short_name}"},
-      duration_s: duration_s
-    )
-  end
+      when is_binary(metric_name),
+      do: external_call(mfa, name, metric_name, pid, ids, times)
 
   def call(
         {module, function, args},
@@ -235,6 +138,65 @@ defmodule NewRelic.Tracer.Report do
     NewRelic.report_aggregate(
       %{name: :FunctionTrace, mfa: function_name({module, function, arity}, name)},
       %{duration_ms: duration_ms, call_count: 1}
+    )
+  end
+
+  defp external_call(
+         {module, function, args},
+         name,
+         metric_name,
+         pid,
+         {id, parent_id},
+         {start_time, start_time_mono, end_time_mono}
+       ) do
+    duration_ms = duration_ms(start_time_mono, end_time_mono)
+    duration_s = duration_ms / 1000
+    arity = length(args)
+
+    Transaction.Reporter.add_trace_segment(%{
+      module: module,
+      function: function,
+      arity: arity,
+      name: name,
+      args: args,
+      pid: pid,
+      id: id,
+      parent_id: parent_id,
+      start_time: start_time,
+      start_time_mono: start_time_mono,
+      end_time_mono: end_time_mono
+    })
+
+    NewRelic.report_span(
+      timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
+      duration_s: duration_s,
+      name: function_name({module, function, arity}, name),
+      edge: [span: id, parent: parent_id],
+      category: "http",
+      attributes: Map.put(NewRelic.DistributedTrace.get_span_attrs(), :args, inspect(args))
+    )
+
+    NewRelic.incr_attributes(
+      external_call_count: 1,
+      external_duration_ms: duration_ms,
+      "external.#{function_name({module, function}, name)}.call_count": 1,
+      "external.#{function_name({module, function}, name)}.duration_ms": duration_ms
+    )
+
+    NewRelic.report_aggregate(
+      %{
+        name: :FunctionTrace,
+        mfa: function_name({module, function, arity}, name),
+        metric_category: :external
+      },
+      %{duration_ms: duration_ms, call_count: 1}
+    )
+
+    Transaction.Reporter.track_metric({:external, duration_s})
+
+    NewRelic.report_metric(
+      {:external, metric_name},
+      duration_s: duration_s
     )
   end
 
