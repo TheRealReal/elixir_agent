@@ -100,6 +100,47 @@ defmodule NewRelic.Tracer.Report do
       when is_binary(metric_name),
       do: external_call(mfa, name, metric_name, pid, ids, times)
 
+  def call(
+        {module, function, args},
+        name,
+        pid,
+        {id, parent_id},
+        {start_time, start_time_mono, end_time_mono}
+      )
+      when is_atom(name) do
+    duration_ms = duration_ms(start_time_mono, end_time_mono)
+    duration_s = duration_ms / 1000
+    arity = length(args)
+
+    Transaction.Reporter.add_trace_segment(%{
+      module: module,
+      function: function,
+      arity: arity,
+      name: name,
+      args: args,
+      pid: pid,
+      id: id,
+      parent_id: parent_id,
+      start_time: start_time,
+      start_time_mono: start_time_mono,
+      end_time_mono: end_time_mono
+    })
+
+    NewRelic.report_span(
+      timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
+      duration_s: duration_s,
+      name: function_name({module, function, arity}, name),
+      edge: [span: id, parent: parent_id],
+      category: "generic",
+      attributes: Map.put(NewRelic.DistributedTrace.get_span_attrs(), :args, inspect(args))
+    )
+
+    NewRelic.report_aggregate(
+      %{name: :FunctionTrace, mfa: function_name({module, function, arity}, name)},
+      %{duration_ms: duration_ms, call_count: 1}
+    )
+  end
+
   defp external_call(
          {module, function, args},
          name,
@@ -156,47 +197,6 @@ defmodule NewRelic.Tracer.Report do
     NewRelic.report_metric(
       {:external, metric_name},
       duration_s: duration_s
-    )
-  end
-
-  def call(
-        {module, function, args},
-        name,
-        pid,
-        {id, parent_id},
-        {start_time, start_time_mono, end_time_mono}
-      )
-      when is_atom(name) do
-    duration_ms = duration_ms(start_time_mono, end_time_mono)
-    duration_s = duration_ms / 1000
-    arity = length(args)
-
-    Transaction.Reporter.add_trace_segment(%{
-      module: module,
-      function: function,
-      arity: arity,
-      name: name,
-      args: args,
-      pid: pid,
-      id: id,
-      parent_id: parent_id,
-      start_time: start_time,
-      start_time_mono: start_time_mono,
-      end_time_mono: end_time_mono
-    })
-
-    NewRelic.report_span(
-      timestamp_ms: System.convert_time_unit(start_time, :native, :millisecond),
-      duration_s: duration_s,
-      name: function_name({module, function, arity}, name),
-      edge: [span: id, parent: parent_id],
-      category: "generic",
-      attributes: Map.put(NewRelic.DistributedTrace.get_span_attrs(), :args, inspect(args))
-    )
-
-    NewRelic.report_aggregate(
-      %{name: :FunctionTrace, mfa: function_name({module, function, arity}, name)},
-      %{duration_ms: duration_ms, call_count: 1}
     )
   end
 
